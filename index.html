@@ -1,0 +1,375 @@
+
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ROYAL IPTV</title>
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    background: #10131b;
+    color: white;
+    font-family: Arial, sans-serif;
+}
+
+header {
+    background: #191e2b;
+    padding: 18px;
+    font-size: 22px;
+    font-weight: bold;
+    color: #38a5ff;
+}
+
+.container {
+    padding: 15px;
+    max-width: 1100px;
+    margin: auto;
+}
+
+input, button {
+    padding: 13px;
+    border: none;
+    border-radius: 7px;
+    margin: 4px 0;
+}
+
+input {
+    background: #252c3b;
+    color: white;
+    width: 100%;
+}
+
+button {
+    background: #168cff;
+    color: white;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+button:active {
+    opacity: .7;
+}
+
+video {
+    width: 100%;
+    background: black;
+    border-radius: 10px;
+    aspect-ratio: 16/9;
+}
+
+.player {
+    margin-top: 15px;
+}
+
+#channelTitle {
+    font-size: 19px;
+    margin: 12px 0;
+}
+
+.search {
+    margin-top: 15px;
+}
+
+#channels {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 10px;
+    margin-top: 15px;
+}
+
+.channel {
+    background: #202737;
+    padding: 12px;
+    border-radius: 10px;
+    text-align: center;
+    cursor: pointer;
+    min-width: 0;
+}
+
+.channel:hover {
+    background: #30415b;
+}
+
+.channel img {
+    width: 65px;
+    height: 55px;
+    object-fit: contain;
+    display: block;
+    margin: auto auto 8px;
+}
+
+.channel-name {
+    font-size: 13px;
+    overflow-wrap: anywhere;
+}
+
+.active {
+    outline: 2px solid #168cff;
+}
+
+#status {
+    color: #9baac0;
+    font-size: 13px;
+    margin-top: 10px;
+}
+
+h3 {
+    color: #38a5ff;
+}
+</style>
+</head>
+
+<body>
+
+<header>📺 ROYAL IPTV</header>
+
+<div class="container">
+
+    <h3>M3U Playlist</h3>
+
+    <input
+        id="playlistUrl"
+        type="url"
+        placeholder="M3U URL adresini gir..."
+    >
+
+    <button onclick="loadPlaylist()">
+        Playlist Yükle
+    </button>
+
+    <div id="status">Playlist bekleniyor...</div>
+
+    <div class="player">
+
+        <video id="video" controls playsinline></video>
+
+        <div id="channelTitle">
+            Kanal seçilmedi
+        </div>
+
+    </div>
+
+    <h3>Kanallar</h3>
+
+    <input
+        class="search"
+        id="search"
+        placeholder="Kanal ara..."
+        oninput="renderChannels()"
+    >
+
+    <div id="channels"></div>
+
+</div>
+
+<script>
+"use strict";
+
+const video = document.getElementById("video");
+const channelsElement = document.getElementById("channels");
+const statusElement = document.getElementById("status");
+const titleElement = document.getElementById("channelTitle");
+
+let channels = [];
+let hls = null;
+
+async function loadPlaylist() {
+
+    const url = document.getElementById("playlistUrl").value.trim();
+
+    if (!url) {
+        alert("M3U URL gir!");
+        return;
+    }
+
+    statusElement.textContent = "Playlist yükleniyor...";
+
+    try {
+
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            throw new Error("HTTP " + response.status);
+        }
+
+        const text = await response.text();
+
+        if (!text.trim().startsWith("#EXTM3U")) {
+            throw new Error("Geçerli bir M3U dosyası değil.");
+        }
+
+        parseM3U(text);
+
+        statusElement.textContent =
+            channels.length + " kanal yüklendi.";
+
+        renderChannels();
+
+    } catch (error) {
+
+        statusElement.textContent =
+            "Hata: " + error.message +
+            " (Sunucu CORS izni vermiyor olabilir.)";
+
+    }
+}
+
+function parseM3U(data) {
+
+    channels = [];
+
+    const lines = data.split(/\r?\n/);
+
+    let current = null;
+
+    for (const rawLine of lines) {
+
+        const line = rawLine.trim();
+
+        if (!line) continue;
+
+        if (line.startsWith("#EXTINF:")) {
+
+            const comma = line.indexOf(",");
+
+            const info = comma >= 0
+                ? line.substring(0, comma)
+                : line;
+
+            const name = comma >= 0
+                ? line.substring(comma + 1).trim()
+                : "İsimsiz Kanal";
+
+            const logo =
+                info.match(/tvg-logo="([^"]*)"/i);
+
+            const group =
+                info.match(/group-title="([^"]*)"/i);
+
+            current = {
+                name: name || "İsimsiz Kanal",
+                logo: logo ? logo[1] : "",
+                group: group ? group[1] : "Diğer",
+                url: ""
+            };
+
+        } else if (
+            !line.startsWith("#") &&
+            current
+        ) {
+
+            current.url = line;
+
+            channels.push(current);
+
+            current = null;
+        }
+    }
+}
+
+function renderChannels() {
+
+    channelsElement.innerHTML = "";
+
+    const query =
+        document.getElementById("search").value.toLowerCase();
+
+    const filtered = channels.filter(channel =>
+        channel.name.toLowerCase().includes(query) ||
+        channel.group.toLowerCase().includes(query)
+    );
+
+    filtered.forEach(channel => {
+
+        const card = document.createElement("div");
+
+        card.className = "channel";
+
+        const img = document.createElement("img");
+
+        img.src = channel.logo || "";
+        img.alt = "";
+        img.onerror = () => {
+            img.style.display = "none";
+        };
+
+        const name = document.createElement("div");
+
+        name.className = "channel-name";
+        name.textContent = channel.name;
+
+        const group = document.createElement("small");
+
+        group.textContent = channel.group;
+        group.style.color = "#9baac0";
+
+        card.appendChild(img);
+        card.appendChild(name);
+        card.appendChild(group);
+
+        card.onclick = () => playChannel(channel, card);
+
+        channelsElement.appendChild(card);
+    });
+}
+
+function playChannel(channel, card) {
+
+    titleElement.textContent = channel.name;
+
+    document.querySelectorAll(".channel").forEach(el => {
+        el.classList.remove("active");
+    });
+
+    card.classList.add("active");
+
+    if (hls) {
+        hls.destroy();
+        hls = null;
+    }
+
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+
+    const url = channel.url;
+
+    if (Hls.isSupported() &&
+        /\.m3u8($|[?#])/i.test(url)) {
+
+        hls = new Hls();
+
+        hls.loadSource(url);
+        hls.attachMedia(video);
+
+        hls.on(Hls.Events.ERROR, function(event, data) {
+            if (data.fatal) {
+                statusElement.textContent =
+                    "Yayın hatası: " + data.type;
+            }
+        });
+
+    } else {
+
+        video.src = url;
+
+    }
+
+    video.play().catch(() => {
+        statusElement.textContent =
+            "Oynatma için ekrana dokun veya Play tuşuna bas.";
+    });
+}
+</script>
+
+</body>
+  </html>
+  

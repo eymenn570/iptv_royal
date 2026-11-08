@@ -23,28 +23,32 @@ body {
 header {
     background: #191e2b;
     padding: 18px;
-    font-size: 22px;
+    font-size: 23px;
     font-weight: bold;
     color: #38a5ff;
 }
 
 .container {
-    padding: 15px;
     max-width: 1100px;
     margin: auto;
+    padding: 15px;
+}
+
+h3 {
+    color: #38a5ff;
 }
 
 input, button {
+    width: 100%;
     padding: 13px;
+    margin: 5px 0;
     border: none;
     border-radius: 7px;
-    margin: 4px 0;
 }
 
 input {
     background: #252c3b;
     color: white;
-    width: 100%;
 }
 
 button {
@@ -60,9 +64,9 @@ button:active {
 
 video {
     width: 100%;
+    aspect-ratio: 16/9;
     background: black;
     border-radius: 10px;
-    aspect-ratio: 16/9;
 }
 
 .player {
@@ -74,13 +78,40 @@ video {
     margin: 12px 0;
 }
 
-.search {
+#status, #epgStatus {
+    color: #9baac0;
+    font-size: 13px;
+    margin: 10px 0;
+    overflow-wrap: anywhere;
+}
+
+.epg-box {
+    background: #1b2332;
+    padding: 15px;
+    border-radius: 10px;
     margin-top: 15px;
+}
+
+.epg-item {
+    background: #252f40;
+    border-radius: 8px;
+    padding: 12px;
+    margin-top: 10px;
+}
+
+.epg-item small {
+    color: #38a5ff;
+}
+
+.epg-item p {
+    margin-bottom: 0;
+    color: #c4d0df;
+    font-size: 13px;
 }
 
 #channels {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
     gap: 10px;
     margin-top: 15px;
 }
@@ -94,16 +125,16 @@ video {
     min-width: 0;
 }
 
-.channel:hover {
-    background: #30415b;
+.channel.active {
+    outline: 2px solid #168cff;
 }
 
 .channel img {
-    width: 65px;
-    height: 55px;
+    width: 60px;
+    height: 50px;
     object-fit: contain;
-    display: block;
     margin: auto auto 8px;
+    display: block;
 }
 
 .channel-name {
@@ -111,34 +142,27 @@ video {
     overflow-wrap: anywhere;
 }
 
-.active {
-    outline: 2px solid #168cff;
-}
-
-#status {
+.group {
     color: #9baac0;
-    font-size: 13px;
-    margin-top: 10px;
+    font-size: 11px;
+    margin-top: 5px;
 }
 
-h3 {
-    color: #38a5ff;
-}
 </style>
 </head>
 
 <body>
 
-<header>📺 ROYAL IPTV</header>
+<header>👑 ROYAL IPTV</header>
 
 <div class="container">
 
-    <h3>M3U Playlist</h3>
+    <h3>📡 M3U Playlist</h3>
 
     <input
         id="playlistUrl"
         type="url"
-        placeholder="M3U URL adresini gir..."
+        placeholder="M3U URL adresi..."
     >
 
     <button onclick="loadPlaylist()">
@@ -146,6 +170,20 @@ h3 {
     </button>
 
     <div id="status">Playlist bekleniyor...</div>
+
+    <h3>📺 EPG Elektronik Program Rehberi</h3>
+
+    <input
+        id="epgUrl"
+        type="url"
+        placeholder="XMLTV EPG URL adresi..."
+    >
+
+    <button onclick="loadEPG()">
+        EPG Yükle
+    </button>
+
+    <div id="epgStatus">EPG bekleniyor...</div>
 
     <div class="player">
 
@@ -157,10 +195,19 @@ h3 {
 
     </div>
 
-    <h3>Kanallar</h3>
+    <div class="epg-box">
+
+        <h3>📅 Program Rehberi</h3>
+
+        <div id="epgContent">
+            Kanal seçilmedi.
+        </div>
+
+    </div>
+
+    <h3>📋 Kanallar</h3>
 
     <input
-        class="search"
         id="search"
         placeholder="Kanal ara..."
         oninput="renderChannels()"
@@ -175,11 +222,17 @@ h3 {
 
 const video = document.getElementById("video");
 const channelsElement = document.getElementById("channels");
-const statusElement = document.getElementById("status");
-const titleElement = document.getElementById("channelTitle");
 
 let channels = [];
+let programs = [];
 let hls = null;
+let selectedChannel = null;
+
+function setStatus(id, message) {
+    document.getElementById(id).textContent = message;
+}
+
+// M3U YÜKLE
 
 async function loadPlaylist() {
 
@@ -190,7 +243,7 @@ async function loadPlaylist() {
         return;
     }
 
-    statusElement.textContent = "Playlist yükleniyor...";
+    setStatus("status", "Playlist yükleniyor...");
 
     try {
 
@@ -200,39 +253,37 @@ async function loadPlaylist() {
             throw new Error("HTTP " + response.status);
         }
 
-        const text = await response.text();
+        const data = await response.text();
 
-        if (!text.trim().startsWith("#EXTM3U")) {
-            throw new Error("Geçerli bir M3U dosyası değil.");
+        if (!data.trim().startsWith("#EXTM3U")) {
+            throw new Error("Geçersiz M3U dosyası.");
         }
 
-        parseM3U(text);
-
-        statusElement.textContent =
-            channels.length + " kanal yüklendi.";
-
+        parseM3U(data);
         renderChannels();
+
+        setStatus("status", channels.length + " kanal yüklendi.");
 
     } catch (error) {
 
-        statusElement.textContent =
-            "Hata: " + error.message +
-            " (Sunucu CORS izni vermiyor olabilir.)";
+        setStatus("status", "Hata: " + error.message +
+            " | CORS iznini kontrol et.");
 
     }
 }
+
+// M3U PARSER
 
 function parseM3U(data) {
 
     channels = [];
 
     const lines = data.split(/\r?\n/);
-
     let current = null;
 
-    for (const rawLine of lines) {
+    for (const raw of lines) {
 
-        const line = rawLine.trim();
+        const line = raw.trim();
 
         if (!line) continue;
 
@@ -248,82 +299,325 @@ function parseM3U(data) {
                 ? line.substring(comma + 1).trim()
                 : "İsimsiz Kanal";
 
-            const logo =
-                info.match(/tvg-logo="([^"]*)"/i);
+            function attr(key) {
 
-            const group =
-                info.match(/group-title="([^"]*)"/i);
+                const regex = new RegExp(
+                    key + '="([^"]*)"', "i"
+                );
+
+                const match = info.match(regex);
+
+                return match ? match[1] : "";
+            }
 
             current = {
-                name: name || "İsimsiz Kanal",
-                logo: logo ? logo[1] : "",
-                group: group ? group[1] : "Diğer",
+                name: name,
+                id: attr("tvg-id"),
+                logo: attr("tvg-logo"),
+                group: attr("group-title") || "Diğer",
                 url: ""
             };
 
-        } else if (
-            !line.startsWith("#") &&
-            current
-        ) {
+        } else if (!line.startsWith("#") && current) {
 
             current.url = line;
-
             channels.push(current);
-
             current = null;
+
         }
     }
 }
 
-function renderChannels() {
+// XMLTV ZAMAN PARSER
 
-    channelsElement.innerHTML = "";
+function parseXMLTVTime(value) {
 
-    const query =
-        document.getElementById("search").value.toLowerCase();
-
-    const filtered = channels.filter(channel =>
-        channel.name.toLowerCase().includes(query) ||
-        channel.group.toLowerCase().includes(query)
+    const match = value.trim().match(
+        /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(?:\s*([+-])(\d{2})(\d{2}))?/
     );
 
-    filtered.forEach(channel => {
+    if (!match) return NaN;
 
-        const card = document.createElement("div");
+    const [
+        ,
+        year, month, day,
+        hour, minute, second,
+        sign, offsetHour, offsetMinute
+    ] = match;
 
-        card.className = "channel";
+    let timestamp = Date.UTC(
+        Number(year),
+        Number(month) - 1,
+        Number(day),
+        Number(hour),
+        Number(minute),
+        Number(second)
+    );
 
-        const img = document.createElement("img");
+    if (sign) {
 
-        img.src = channel.logo || "";
-        img.alt = "";
-        img.onerror = () => {
-            img.style.display = "none";
-        };
+        let offset =
+            (Number(offsetHour) * 60 + Number(offsetMinute)) * 60000;
 
-        const name = document.createElement("div");
+        timestamp -= sign === "+" ? offset : -offset;
+    }
 
-        name.className = "channel-name";
-        name.textContent = channel.name;
-
-        const group = document.createElement("small");
-
-        group.textContent = channel.group;
-        group.style.color = "#9baac0";
-
-        card.appendChild(img);
-        card.appendChild(name);
-        card.appendChild(group);
-
-        card.onclick = () => playChannel(channel, card);
-
-        channelsElement.appendChild(card);
-    });
+    return timestamp;
 }
+
+function formatTime(timestamp) {
+
+    return new Date(timestamp).toLocaleTimeString(
+        "tr-TR",
+        {
+            hour: "2-digit",
+            minute: "2-digit"
+        }
+    );
+}
+
+// XMLTV EPG YÜKLE
+
+async function loadEPG() {
+
+    const url = document.getElementById("epgUrl").value.trim();
+
+    if (!url) {
+        alert("EPG URL gir!");
+        return;
+    }
+
+    setStatus("epgStatus", "EPG yükleniyor...");
+
+    try {
+
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            throw new Error("HTTP " + response.status);
+        }
+
+        let text;
+
+        const isGzip =
+            url.toLowerCase().split("?")[0].endsWith(".gz") ||
+            response.headers.get("Content-Type")?.includes("gzip");
+
+        if (isGzip) {
+
+            if (!("DecompressionStream" in window)) {
+                throw new Error("GZIP desteği bu tarayıcıda yok.");
+            }
+
+            const stream = response.body.pipeThrough(
+                new DecompressionStream("gzip")
+            );
+
+            text = await new Response(stream).text();
+
+        } else {
+
+            text = await response.text();
+
+        }
+
+        parseEPG(text);
+
+        setStatus(
+            "epgStatus",
+            programs.length + " program yüklendi."
+        );
+
+        updateEPG();
+
+    } catch (error) {
+
+        setStatus(
+            "epgStatus",
+            "EPG hatası: " + error.message +
+            " | CORS veya XML dosyasını kontrol et."
+        );
+
+    }
+}
+
+// XMLTV PARSER
+
+function parseEPG(xmlText) {
+
+    const parser = new DOMParser();
+
+    const xml = parser.parseFromString(
+        xmlText,
+        "application/xml"
+    );
+
+    if (xml.querySelector("parsererror")) {
+        throw new Error("XML dosyası okunamadı.");
+    }
+
+    programs = [];
+
+    const entries = xml.getElementsByTagName("programme");
+
+    for (const item of entries) {
+
+        const titleElement = item.getElementsByTagName("title")[0];
+
+        if (!titleElement) continue;
+
+        const start = parseXMLTVTime(
+            item.getAttribute("start") || ""
+        );
+
+        const stop = parseXMLTVTime(
+            item.getAttribute("stop") || ""
+        );
+
+        if (!Number.isFinite(start) ||
+            !Number.isFinite(stop) ||
+            stop <= start) continue;
+
+        const descElement =
+            item.getElementsByTagName("desc")[0];
+
+        programs.push({
+
+            channel: item.getAttribute("channel") || "",
+
+            title: titleElement.textContent.trim(),
+
+            description: descElement
+                ? descElement.textContent.trim()
+                : "",
+
+            start: start,
+            stop: stop
+
+        });
+    }
+
+}
+
+// KANAL EŞLEŞTİRME
+
+function normalizeName(name) {
+
+    return name
+        .toLocaleLowerCase("tr-TR")
+        .replace(/[^a-z0-9ğüşöçıİ]/gi, "");
+}
+
+function getChannelPrograms(channel) {
+
+    let matching = [];
+
+    if (channel.id) {
+
+        matching = programs.filter(
+            p => p.channel === channel.id
+        );
+
+    }
+
+    if (matching.length === 0) {
+
+        const name = normalizeName(channel.name);
+
+        matching = programs.filter(p =>
+            normalizeName(p.channel) === name
+        );
+
+    }
+
+    return matching.sort((a, b) => a.start - b.start);
+}
+
+// EPG GÖSTER
+
+function updateEPG() {
+
+    const content = document.getElementById("epgContent");
+
+    if (!selectedChannel) {
+
+        content.textContent = "Kanal seçilmedi.";
+        return;
+
+    }
+
+    if (programs.length === 0) {
+
+        content.textContent = "Önce EPG yükle.";
+        return;
+
+    }
+
+    const list = getChannelPrograms(selectedChannel);
+
+    const now = Date.now();
+
+    const current = list.find(
+        p => p.start <= now && p.stop > now
+    );
+
+    const next = list
+        .filter(p => p.start > now)
+        .sort((a, b) => a.start - b.start)[0];
+
+    content.innerHTML = "";
+
+    function addProgram(label, program) {
+
+        const box = document.createElement("div");
+
+        box.className = "epg-item";
+
+        if (!program) {
+
+            box.textContent = label + ": Program bulunamadı.";
+
+        } else {
+
+            const small = document.createElement("small");
+            small.textContent = label + " • " +
+                formatTime(program.start) + " - " +
+                formatTime(program.stop);
+
+            const title = document.createElement("h4");
+            title.textContent = program.title;
+
+            const desc = document.createElement("p");
+            desc.textContent = program.description;
+
+            box.appendChild(small);
+            box.appendChild(title);
+            box.appendChild(desc);
+
+        }
+
+        content.appendChild(box);
+    }
+
+    addProgram("🔴 ŞİMDİ", current);
+    addProgram("⏭ SONRAKİ", next);
+
+    if (list.length === 0) {
+
+        content.textContent =
+            "Bu kanal için EPG programı bulunamadı. Kanal ID'sini kontrol et.";
+
+    }
+}
+
+// KANAL OYNAT
 
 function playChannel(channel, card) {
 
-    titleElement.textContent = channel.name;
+    selectedChannel = channel;
+
+    document.getElementById("channelTitle").textContent =
+        channel.name;
 
     document.querySelectorAll(".channel").forEach(el => {
         el.classList.remove("active");
@@ -350,11 +644,17 @@ function playChannel(channel, card) {
         hls.loadSource(url);
         hls.attachMedia(video);
 
-        hls.on(Hls.Events.ERROR, function(event, data) {
+        hls.on(Hls.Events.ERROR, (event, data) => {
+
             if (data.fatal) {
-                statusElement.textContent =
-                    "Yayın hatası: " + data.type;
+
+                setStatus(
+                    "status",
+                    "Yayın oynatma hatası: " + data.type
+                );
+
             }
+
         });
 
     } else {
@@ -364,12 +664,74 @@ function playChannel(channel, card) {
     }
 
     video.play().catch(() => {
-        statusElement.textContent =
-            "Oynatma için ekrana dokun veya Play tuşuna bas.";
+
+        setStatus(
+            "status",
+            "Oynatmak için Play tuşuna bas."
+        );
+
     });
+
+    updateEPG();
 }
+
+// KANAL LİSTESİ
+
+function renderChannels() {
+
+    channelsElement.innerHTML = "";
+
+    const query = document
+        .getElementById("search")
+        .value.toLocaleLowerCase("tr-TR");
+
+    channels
+        .filter(c =>
+            c.name.toLocaleLowerCase("tr-TR").includes(query) ||
+            c.group.toLocaleLowerCase("tr-TR").includes(query)
+        )
+        .forEach(channel => {
+
+            const card = document.createElement("div");
+
+            card.className = "channel";
+
+            const img = document.createElement("img");
+
+            img.alt = "";
+            img.src = channel.logo || "";
+
+            img.onerror = () => {
+                img.style.display = "none";
+            };
+
+            const name = document.createElement("div");
+
+            name.className = "channel-name";
+            name.textContent = channel.name;
+
+            const group = document.createElement("div");
+
+            group.className = "group";
+            group.textContent = channel.group;
+
+            card.appendChild(img);
+            card.appendChild(name);
+            card.appendChild(group);
+
+            card.onclick = () => playChannel(channel, card);
+
+            channelsElement.appendChild(card);
+
+        });
+
+}
+
+// EPG SAAT GÜNCELLEME
+
+setInterval(updateEPG, 60000);
+
 </script>
 
 </body>
-  </html>
-  
+</html>
